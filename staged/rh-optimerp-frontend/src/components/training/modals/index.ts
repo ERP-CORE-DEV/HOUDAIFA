@@ -1,0 +1,13 @@
+export { default as TrainingPlanModal } from './TrainingPlanModal';
+export { default as TrainingActionModal } from './TrainingActionModal';
+export { default as CompetencyModal } from './CompetencyModal';
+export { default as EntretienModal } from './EntretienModal';
+export { default as CertificationModal } from './CertificationModal';
+export { default as ElearningModal } from './ElearningModal';
+export { default as EvaluationModal } from './EvaluationModal';
+export { default as ProviderModal } from './ProviderModal';
+export { default as OpcoModal } from './OpcoModal';
+export { default as BilanModal } from './BilanModal';
+export { default as AlternanceModal } from './AlternanceModal';
+export { default as ComplianceModal } from './ComplianceModal';
+export { default as GdprModal } from './GdprModal';
