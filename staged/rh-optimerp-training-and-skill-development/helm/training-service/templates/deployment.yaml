@@ -1,0 +1,179 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "training-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "training-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "training-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never go below minReplicas during a rollout
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "training-service.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Force pod restart when the SecretProviderClass version changes
+        checksum/secret-provider: {{ include (print $.Template.BasePath "/secret-provider-class.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      # -----------------------------------------------------------------------
+      # Image pull secrets (ACR access)
+      # -----------------------------------------------------------------------
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      serviceAccountName: {{ include "training-service.serviceAccountName" . }}
+
+      # -----------------------------------------------------------------------
+      # Pod-level security context
+      # -----------------------------------------------------------------------
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+
+      # -----------------------------------------------------------------------
+      # Pod anti-affinity: spread replicas across nodes for HA
+      # -----------------------------------------------------------------------
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "training-service.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+        {{- with .Values.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # -----------------------------------------------------------------------
+      # Volumes — Azure Key Vault CSI secrets
+      # -----------------------------------------------------------------------
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "training-service.fullname" . }}-kv
+
+      # -----------------------------------------------------------------------
+      # Graceful termination
+      # -----------------------------------------------------------------------
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          # -------------------------------------------------------------------
+          # Container-level security context
+          # -------------------------------------------------------------------
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+
+          # -------------------------------------------------------------------
+          # Non-secret environment variables
+          # -------------------------------------------------------------------
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Secrets surfaced from the CSI volume as env vars via the
+            # SecretProviderClass secretObjects mapping
+            - name: ConnectionStrings__CosmosDb
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-service.fullname" . }}-secrets
+                  key: cosmosdb-connection-string
+            - name: JwtSettings__Secret
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-service.fullname" . }}-secrets
+                  key: jwt-settings
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-service.fullname" . }}-secrets
+                  key: appinsights-connection-string
+
+          # -------------------------------------------------------------------
+          # CSI secrets volume mount (required to populate secretObjects)
+          # -------------------------------------------------------------------
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+            # Writable tmp directory required because readOnlyRootFilesystem=true
+            - name: tmp
+              mountPath: /tmp
+
+          # -------------------------------------------------------------------
+          # Health probes
+          # -------------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+
+          # -------------------------------------------------------------------
+          # Resource limits and requests
+          # -------------------------------------------------------------------
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+      # Ephemeral writable volume for readOnlyRootFilesystem compatibility
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "training-service.fullname" . }}-kv
+        - name: tmp
+          emptyDir: {}

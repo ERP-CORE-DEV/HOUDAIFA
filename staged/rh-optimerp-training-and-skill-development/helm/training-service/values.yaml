@@ -1,0 +1,165 @@
+# =============================================================================
+# MS 5.7 Training & Skill Development — Helm Values
+# =============================================================================
+# All sensitive values must be sourced from Azure Key Vault via CSI driver.
+# Never set secret values directly in this file or in --set flags in CI logs.
+# =============================================================================
+
+# -- Number of pod replicas (overridden by HPA when autoscaling is enabled)
+replicaCount: 2
+
+image:
+  # -- Container registry and image name (no tag)
+  repository: rhoptimerpacr.azurecr.io/training-service
+  # -- Image tag; use a pinned SHA in production pipelines, never 'latest'
+  tag: latest
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- Name of the pre-created imagePullSecret for ACR access
+imagePullSecrets: []
+# - name: acr-pull-secret
+
+# -- Override the chart name for resource naming
+nameOverride: ""
+# -- Override the full release name for resource naming
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a dedicated Kubernetes ServiceAccount
+  create: true
+  # -- Annotations to add (e.g., Azure Workload Identity binding)
+  annotations: {}
+  # azure.workload.identity/client-id: "<managed-identity-client-id>"
+  # -- Override the ServiceAccount name; defaults to the release full name
+  name: ""
+
+# -- Annotations applied to every pod in the Deployment
+podAnnotations:
+  # Prometheus scrape configuration
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+# -- Security context applied at the pod level
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 2000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Security context applied at the container level
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  # -- Kubernetes Service type
+  type: ClusterIP
+  # -- Service port (cluster-facing)
+  port: 80
+  # -- Container port the .NET 8 backend listens on
+  targetPort: 8080
+
+ingress:
+  # -- Enable Nginx ingress resource
+  enabled: true
+  # -- IngressClass name (must match the AKS ingress controller)
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Uncomment to force HTTPS redirect
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: training.rh-optimerp.internal
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration; add entries to enable HTTPS
+  tls: []
+  # - secretName: training-tls
+  #   hosts:
+  #     - training.rh-optimerp.internal
+
+resources:
+  limits:
+    # -- CPU limit for the backend container
+    cpu: 500m
+    # -- Memory limit for the backend container
+    memory: 512Mi
+  requests:
+    # -- CPU request for scheduling
+    cpu: 100m
+    # -- Memory request for scheduling
+    memory: 256Mi
+
+autoscaling:
+  # -- Enable HorizontalPodAutoscaler
+  enabled: true
+  # -- Minimum replica count (must be >= replicaCount for HA)
+  minReplicas: 2
+  # -- Maximum replica count under load
+  maxReplicas: 5
+  # -- Scale up when average CPU across pods exceeds this percentage
+  targetCPUUtilizationPercentage: 70
+  # -- (Optional) Scale on memory utilisation; uncomment to enable
+  # targetMemoryUtilizationPercentage: 80
+
+# -- Pod Disruption Budget: maximum pods unavailable during voluntary disruptions
+podDisruptionBudget:
+  enabled: true
+  # maxUnavailable and minAvailable are mutually exclusive — use one only
+  maxUnavailable: 1
+  # minAvailable: 1
+
+# -- Non-secret environment variables injected into the container
+env:
+  ASPNETCORE_ENVIRONMENT: Production
+  ASPNETCORE_URLS: "http://+:8080"
+  # CosmosDB database name (not a secret)
+  CosmosDb__DatabaseName: TrainingSkillDevelopmentDB
+
+# -- Liveness probe configuration
+livenessProbe:
+  path: /health/live
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- Readiness probe configuration
+readinessProbe:
+  path: /health/ready
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+secrets:
+  # -- Name of the Azure Key Vault instance
+  keyVaultName: rh-optimerp-kv
+  # -- Key Vault secret name that holds the CosmosDB connection string
+  cosmosDbSecretName: cosmosdb-connection-string
+  # -- Key Vault secret name that holds JWT signing settings
+  jwtSecretName: jwt-settings
+  # -- Key Vault secret name for Application Insights connection string
+  appInsightsSecretName: appinsights-connection-string
+  # -- Azure tenant ID (used by the CSI driver for Key Vault authentication)
+  tenantId: ""
+  # -- Azure User-Assigned Managed Identity client ID bound to the pod
+  userAssignedIdentityClientId: ""
+
+# -- Node selector for pod scheduling
+nodeSelector: {}
+
+# -- Tolerations for tainted nodes
+tolerations: []
+
+# -- Affinity overrides; the deployment template adds pod anti-affinity by default
+affinity: {}

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "8785487722381996520"
+    }
+  },
+  "parameters": {
+    "resourcePrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Prefix applied to every resource name."
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for CosmosDB account."
+      }
+    },
+    "environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "staging",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Target deployment environment — controls capacity mode."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "metadata": {
+        "description": "Resource tags."
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Key Vault where the connection string secret will be written."
+      }
+    }
+  },
+  "variables": {
+    "isProduction": "[equals(parameters('environment'), 'prod')]",
+    "accountProperties": "[if(variables('isProduction'), createObject('databaseAccountOfferType', 'Standard', 'locations', createArray(createObject('locationName', parameters('location'), 'failoverPriority', 0, 'isZoneRedundant', false())), 'consistencyPolicy', createObject('defaultConsistencyLevel', 'Session'), 'enableAutomaticFailover', false(), 'capabilities', createArray()), createObject('databaseAccountOfferType', 'Standard', 'locations', createArray(createObject('locationName', parameters('location'), 'failoverPriority', 0, 'isZoneRedundant', false())), 'consistencyPolicy', createObject('defaultConsistencyLevel', 'Session'), 'enableAutomaticFailover', false(), 'capabilities', createArray(createObject('name', 'EnableServerless'))))]",
+    "containers": [
+      {
+        "name": "TrainingPlans",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "TrainingActions",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "TrainingSessions",
+        "partitionKey": "/ActionId"
+      },
+      {
+        "name": "Enrollments",
+        "partitionKey": "/SessionId"
+      },
+      {
+        "name": "Competencies",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "CompetencyAssessments",
+        "partitionKey": "/EmployeeId"
+      },
+      {
+        "name": "ProfessionalInterviews",
+        "partitionKey": "/EmployeeId"
+      },
+      {
+        "name": "CpfAccounts",
+        "partitionKey": "/EmployeeId"
+      },
+      {
+        "name": "Certifications",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "TrainingProviders",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "Opcos",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "AlternanceContracts",
+        "partitionKey": "/EmployeeId"
+      },
+      {
+        "name": "TrainingObligations",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "TrainingEvaluations",
+        "partitionKey": "/SessionId"
+      },
+      {
+        "name": "BilanDeCompetences",
+        "partitionKey": "/EmployeeId"
+      },
+      {
+        "name": "TutoringPrograms",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "FundingApplications",
+        "partitionKey": "/CompanyId"
+      },
+      {
+        "name": "VaeProjects",
+        "partitionKey": "/EmployeeId"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}-cosmos', parameters('resourcePrefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "GlobalDocumentDB",
+      "properties": "[variables('accountProperties')]"
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB')]",
+      "properties": {
+        "resource": {
+          "id": "TrainingSkillDevelopmentDB"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+      ]
+    },
+    {
+      "copy": {
+        "name": "cosmosContainers",
+        "count": "[length(variables('containers'))]"
+      },
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB', variables('containers')[copyIndex()].name)]",
+      "properties": {
+        "resource": {
+          "id": "[variables('containers')[copyIndex()].name]",
+          "partitionKey": {
+            "paths": [
+              "[variables('containers')[copyIndex()].partitionKey]"
+            ],
+            "kind": "Hash",
+            "version": 2
+          },
+          "indexingPolicy": {
+            "indexingMode": "consistent",
+            "automatic": true,
+            "includedPaths": [
+              {
+                "path": "/*"
+              }
+            ],
+            "excludedPaths": [
+              {
+                "path": "/\"_etag\"/?"
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB')]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/{1}', parameters('keyVaultName'), 'cosmosdb-connection-string')]",
+      "properties": {
+        "value": "[listConnectionStrings(resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix'))), '2024-05-15').connectionStrings[0].connectionString]",
+        "attributes": {
+          "enabled": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "endpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "CosmosDB account endpoint URL (non-secret)."
+      },
+      "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix'))), '2024-05-15').documentEndpoint]"
+    },
+    "cosmosDbSecretUri": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault secret URI for the CosmosDB connection string."
+      },
+      "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'cosmosdb-connection-string'), '2023-07-01').secretUri]"
+    },
+    "accountId": {
+      "type": "string",
+      "metadata": {
+        "description": "CosmosDB account resource ID."
+      },
+      "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+    }
+  }
+}

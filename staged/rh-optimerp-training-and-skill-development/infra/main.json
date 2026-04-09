@@ -1,0 +1,661 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "6383811784748995775"
+    }
+  },
+  "parameters": {
+    "environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "staging",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Target deployment environment."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "francecentral",
+      "metadata": {
+        "description": "Azure region for all resources."
+      }
+    },
+    "projectName": {
+      "type": "string",
+      "defaultValue": "rh-optimerp",
+      "metadata": {
+        "description": "Top-level project name used as a resource prefix."
+      }
+    },
+    "serviceName": {
+      "type": "string",
+      "defaultValue": "training",
+      "metadata": {
+        "description": "Short service identifier used in resource names."
+      }
+    }
+  },
+  "variables": {
+    "resourcePrefix": "[format('{0}-{1}-{2}', parameters('projectName'), parameters('serviceName'), parameters('environment'))]",
+    "commonTags": {
+      "environment": "[parameters('environment')]",
+      "project": "[parameters('projectName')]",
+      "service": "[parameters('serviceName')]",
+      "team": "HOUDAIFA",
+      "managedBy": "bicep"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "monitoring-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('resourcePrefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "4427154784398889121"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix applied to every resource name."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for monitoring resources."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags."
+              }
+            },
+            "logAnalyticsSku": {
+              "type": "string",
+              "defaultValue": "PerGB2018",
+              "allowedValues": [
+                "PerGB2018",
+                "Free"
+              ],
+              "metadata": {
+                "description": "Log Analytics workspace SKU."
+              }
+            },
+            "retentionInDays": {
+              "type": "int",
+              "defaultValue": 90,
+              "minValue": 30,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Log Analytics data retention in days."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('{0}-logs', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "[parameters('logAnalyticsSku')]"
+                },
+                "retentionInDays": "[parameters('retentionInDays')]",
+                "features": {
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                },
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('{0}-appinsights', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('resourcePrefix')))]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "RetentionInDays": "[parameters('retentionInDays')]",
+                "DisableIpMasking": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('resourcePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "appInsightsConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights connection string (stored in Key Vault by keyvault module)."
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appinsights', parameters('resourcePrefix'))), '2020-02-02').ConnectionString]"
+            },
+            "instrumentationKey": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights instrumentation key."
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appinsights', parameters('resourcePrefix'))), '2020-02-02').InstrumentationKey]"
+            },
+            "appInsightsId": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights resource ID."
+              },
+              "value": "[resourceId('Microsoft.Insights/components', format('{0}-appinsights', parameters('resourcePrefix')))]"
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace resource ID — referenced by AKS diagnostic settings."
+              },
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('resourcePrefix')))]"
+            },
+            "logAnalyticsWorkspaceCustomerId": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace customer ID (used for Helm OMS agent config)."
+              },
+              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('resourcePrefix'))), '2023-09-01').customerId]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "keyvault-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('resourcePrefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoring-deployment'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13256112693406608057"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix applied to every resource name."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the Key Vault."
+              }
+            },
+            "appInsightsConnectionString": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Application Insights connection string to store as a secret."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags."
+              }
+            },
+            "aksManagedIdentityObjectId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Object ID of the AKS managed identity granted secret-read access."
+              }
+            }
+          },
+          "variables": {
+            "keyVaultSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}-kv', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 30,
+                "enabledForDeployment": false,
+                "enabledForTemplateDeployment": false,
+                "enabledForDiskEncryption": false,
+                "publicNetworkAccess": "Enabled",
+                "networkAcls": {
+                  "defaultAction": "Allow",
+                  "bypass": "AzureServices"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', format('{0}-kv', parameters('resourcePrefix')), 'appinsights-connection-string')]",
+              "properties": {
+                "value": "[parameters('appInsightsConnectionString')]",
+                "attributes": {
+                  "enabled": true
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix')))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('aksManagedIdentityObjectId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix')))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix'))), parameters('aksManagedIdentityObjectId'), variables('keyVaultSecretsUserRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsUserRoleId'))]",
+                "principalId": "[parameters('aksManagedIdentityObjectId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault name — used as a Helm value for CSI driver mounts."
+              },
+              "value": "[format('{0}-kv', parameters('resourcePrefix'))]"
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault URI."
+              },
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix'))), '2023-07-01').vaultUri]"
+            },
+            "keyVaultId": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault resource ID."
+              },
+              "value": "[resourceId('Microsoft.KeyVault/vaults', format('{0}-kv', parameters('resourcePrefix')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'monitoring-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "cosmosdb-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourcePrefix": {
+            "value": "[variables('resourcePrefix')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "keyVaultName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault-deployment'), '2025-04-01').outputs.keyVaultName.value]"
+          },
+          "tags": {
+            "value": "[variables('commonTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "8785487722381996520"
+            }
+          },
+          "parameters": {
+            "resourcePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Prefix applied to every resource name."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for CosmosDB account."
+              }
+            },
+            "environment": {
+              "type": "string",
+              "allowedValues": [
+                "dev",
+                "staging",
+                "prod"
+              ],
+              "metadata": {
+                "description": "Target deployment environment — controls capacity mode."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags."
+              }
+            },
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault where the connection string secret will be written."
+              }
+            }
+          },
+          "variables": {
+            "isProduction": "[equals(parameters('environment'), 'prod')]",
+            "accountProperties": "[if(variables('isProduction'), createObject('databaseAccountOfferType', 'Standard', 'locations', createArray(createObject('locationName', parameters('location'), 'failoverPriority', 0, 'isZoneRedundant', false())), 'consistencyPolicy', createObject('defaultConsistencyLevel', 'Session'), 'enableAutomaticFailover', false(), 'capabilities', createArray()), createObject('databaseAccountOfferType', 'Standard', 'locations', createArray(createObject('locationName', parameters('location'), 'failoverPriority', 0, 'isZoneRedundant', false())), 'consistencyPolicy', createObject('defaultConsistencyLevel', 'Session'), 'enableAutomaticFailover', false(), 'capabilities', createArray(createObject('name', 'EnableServerless'))))]",
+            "containers": [
+              {
+                "name": "TrainingPlans",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "TrainingActions",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "TrainingSessions",
+                "partitionKey": "/ActionId"
+              },
+              {
+                "name": "Enrollments",
+                "partitionKey": "/SessionId"
+              },
+              {
+                "name": "Competencies",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "CompetencyAssessments",
+                "partitionKey": "/EmployeeId"
+              },
+              {
+                "name": "ProfessionalInterviews",
+                "partitionKey": "/EmployeeId"
+              },
+              {
+                "name": "CpfAccounts",
+                "partitionKey": "/EmployeeId"
+              },
+              {
+                "name": "Certifications",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "TrainingProviders",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "Opcos",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "AlternanceContracts",
+                "partitionKey": "/EmployeeId"
+              },
+              {
+                "name": "TrainingObligations",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "TrainingEvaluations",
+                "partitionKey": "/SessionId"
+              },
+              {
+                "name": "BilanDeCompetences",
+                "partitionKey": "/EmployeeId"
+              },
+              {
+                "name": "TutoringPrograms",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "FundingApplications",
+                "partitionKey": "/CompanyId"
+              },
+              {
+                "name": "VaeProjects",
+                "partitionKey": "/EmployeeId"
+              }
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts",
+              "apiVersion": "2024-05-15",
+              "name": "[format('{0}-cosmos', parameters('resourcePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "GlobalDocumentDB",
+              "properties": "[variables('accountProperties')]"
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+              "apiVersion": "2024-05-15",
+              "name": "[format('{0}/{1}', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB')]",
+              "properties": {
+                "resource": {
+                  "id": "TrainingSkillDevelopmentDB"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "cosmosContainers",
+                "count": "[length(variables('containers'))]"
+              },
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+              "apiVersion": "2024-05-15",
+              "name": "[format('{0}/{1}/{2}', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB', variables('containers')[copyIndex()].name)]",
+              "properties": {
+                "resource": {
+                  "id": "[variables('containers')[copyIndex()].name]",
+                  "partitionKey": {
+                    "paths": [
+                      "[variables('containers')[copyIndex()].partitionKey]"
+                    ],
+                    "kind": "Hash",
+                    "version": 2
+                  },
+                  "indexingPolicy": {
+                    "indexingMode": "consistent",
+                    "automatic": true,
+                    "includedPaths": [
+                      {
+                        "path": "/*"
+                      }
+                    ],
+                    "excludedPaths": [
+                      {
+                        "path": "/\"_etag\"/?"
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('{0}-cosmos', parameters('resourcePrefix')), 'TrainingSkillDevelopmentDB')]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), 'cosmosdb-connection-string')]",
+              "properties": {
+                "value": "[listConnectionStrings(resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix'))), '2024-05-15').connectionStrings[0].connectionString]",
+                "attributes": {
+                  "enabled": true
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "endpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "CosmosDB account endpoint URL (non-secret)."
+              },
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix'))), '2024-05-15').documentEndpoint]"
+            },
+            "cosmosDbSecretUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault secret URI for the CosmosDB connection string."
+              },
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'cosmosdb-connection-string'), '2023-07-01').secretUri]"
+            },
+            "accountId": {
+              "type": "string",
+              "metadata": {
+                "description": "CosmosDB account resource ID."
+              },
+              "value": "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('{0}-cosmos', parameters('resourcePrefix')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'keyvault-deployment')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "cosmosDbEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "CosmosDB account endpoint (non-secret)."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cosmosdb-deployment'), '2025-04-01').outputs.endpoint.value]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Key Vault holding all service secrets."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault-deployment'), '2025-04-01').outputs.keyVaultName.value]"
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URI."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault-deployment'), '2025-04-01').outputs.keyVaultUri.value]"
+    },
+    "appInsightsSecretName": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string secret name in Key Vault."
+      },
+      "value": "appinsights-connection-string"
+    },
+    "cosmosDbSecretName": {
+      "type": "string",
+      "metadata": {
+        "description": "CosmosDB connection string secret name in Key Vault."
+      },
+      "value": "cosmosdb-connection-string"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics workspace resource ID."
+      },
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'monitoring-deployment'), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+    }
+  }
+}

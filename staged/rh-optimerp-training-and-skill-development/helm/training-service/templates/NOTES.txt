@@ -1,0 +1,82 @@
+==============================================================================
+MS 5.7 — Training & Skill Development  |  Release: {{ .Release.Name }}
+==============================================================================
+
+Chart version : {{ .Chart.Version }}
+App version   : {{ .Chart.AppVersion }}
+Namespace     : {{ .Release.Namespace }}
+
+------------------------------------------------------------------------------
+SERVICE ENDPOINTS
+------------------------------------------------------------------------------
+
+{{- if .Values.ingress.enabled }}
+  Ingress hosts:
+  {{- range .Values.ingress.hosts }}
+    http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+  {{- end }}
+{{- else }}
+  Ingress is disabled. Use port-forward to access the service:
+
+    kubectl --namespace {{ .Release.Namespace }} port-forward \
+      svc/{{ include "training-service.fullname" . }} 8080:{{ .Values.service.port }}
+
+  Then open: http://localhost:8080
+{{- end }}
+
+Health checks (internal):
+  Liveness  — http://<pod-ip>:{{ .Values.service.targetPort }}{{ .Values.livenessProbe.path }}
+  Readiness — http://<pod-ip>:{{ .Values.service.targetPort }}{{ .Values.readinessProbe.path }}
+
+------------------------------------------------------------------------------
+AUTOSCALING
+------------------------------------------------------------------------------
+
+{{- if .Values.autoscaling.enabled }}
+  HPA is ENABLED:  {{ .Values.autoscaling.minReplicas }} – {{ .Values.autoscaling.maxReplicas }} replicas
+  Scale trigger: CPU >= {{ .Values.autoscaling.targetCPUUtilizationPercentage }}%
+{{- else }}
+  HPA is disabled. Fixed replica count: {{ .Values.replicaCount }}
+{{- end }}
+
+------------------------------------------------------------------------------
+AZURE KEY VAULT INTEGRATION
+------------------------------------------------------------------------------
+
+  Key Vault : {{ .Values.secrets.keyVaultName }}
+  Secrets mounted via CSI driver into:
+    /mnt/secrets/cosmosdb-connection-string
+    /mnt/secrets/jwt-settings
+    /mnt/secrets/appinsights-connection-string
+
+  Pre-requisites:
+    1. Secrets-Store CSI driver installed on the AKS cluster
+    2. Azure Key Vault Provider for Secrets Store CSI driver installed
+    3. User-Assigned Managed Identity granted "Key Vault Secrets User" role
+    4. values.secrets.tenantId and values.secrets.userAssignedIdentityClientId
+       set to the correct values (via --set or a sealed values file)
+
+------------------------------------------------------------------------------
+USEFUL COMMANDS
+------------------------------------------------------------------------------
+
+  # Watch pod rollout
+  kubectl rollout status deployment/{{ include "training-service.fullname" . }} \
+    -n {{ .Release.Namespace }}
+
+  # Tail application logs
+  kubectl logs -f -l app.kubernetes.io/name={{ include "training-service.name" . }} \
+    -n {{ .Release.Namespace }}
+
+  # Describe HPA status
+  kubectl describe hpa {{ include "training-service.fullname" . }} \
+    -n {{ .Release.Namespace }}
+
+  # Upgrade this release
+  helm upgrade {{ .Release.Name }} ./helm/training-service \
+    -n {{ .Release.Namespace }} \
+    --set image.tag=<new-tag> \
+    --set secrets.tenantId=<tenant-id> \
+    --set secrets.userAssignedIdentityClientId=<client-id>
+
+==============================================================================
